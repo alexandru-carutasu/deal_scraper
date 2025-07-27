@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Run Scraper</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: auto; padding: 20px; }
+        input[type="text"] { width: 300px; padding: 10px; }
+        input[type="submit"] { padding: 10px 20px; }
+        .note { color: #555; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>Update Prices from Altex</h1>
+    <a href="/">&larr; Back to Dashboard</a>
+    <br><br>
+    <form action="/search" method="post">
+        <label for="product_name">Enter Product Name to Scrape:</label><br><br>
+        <input type="text" id="product_name" name="product_name" required>
+        <input type="submit" value="Start Scraping">
+    </form>
+    <p class="note">After clicking, the scraper will run in the background. Please wait for it to finish, then refresh the dashboard to see the results.</p>
+</body>
+</html>

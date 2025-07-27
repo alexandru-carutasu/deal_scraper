@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Search Results</title>
+    <style>
+        /* ... (other styles remain the same) ... */
+        .highlight-live {
+            background-color: #dcedc8; /* Light green for live results */
+        }
+    </style>
+</head>
+<body>
+    <h1>Search Results</h1>
+    <a href="/">&larr; New Search</a>
+
+    <table>
+        <thead>
+            </thead>
+        <tbody>
+            {% for product in products %}
+            <tr class="{% if product.is_new %}highlight-live{% endif %}">
+                <td>{{ product.name }}</td>
+                <td>{{ "%.2f"|format(product.price) }}</td>
+                <td>{{ product.stock_status }}</td>
+                <td>{{ product.store }}</td>
+                <td><a href="{{ product.link }}" target="_blank">View Product</a></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5">No results found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
