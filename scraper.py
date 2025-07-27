@@ -1,9 +1,8 @@
 import time
-import csv
 import random
 import sqlite3
-from datetime import date
 import undetected_chromedriver as uc
+from datetime import date
 from bs4 import BeautifulSoup
 from urllib.parse import quote_plus
 from selenium.webdriver.common.by import By
@@ -19,12 +18,11 @@ USER_AGENTS = [
 WINDOW_SIZES = ["1920,1080", "1366,768", "1536,864"]
 DB_NAME = 'products.db'
 
-
 def setup_database():
-    """Creates the database and tables with the correct schema."""
+    """Creates the database and tables if they don't exist."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-  
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +32,7 @@ def setup_database():
             category TEXT DEFAULT 'Uncategorized'
         )
     ''')
+ 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS prices (
             product_id INTEGER,
@@ -47,6 +46,7 @@ def setup_database():
     conn.close()
 
 def update_database(product_list):
+    """Inserts or updates product data and categories in the database."""
     if not product_list:
         return
         
@@ -60,9 +60,11 @@ def update_database(product_list):
         
         if result:
             product_id = result[0]
+            
+            cursor.execute("UPDATE products SET category = ? WHERE id = ?", (product.get('category', 'Uncategorized'), product_id))
         else:
-            cursor.execute("INSERT INTO products (name, link, store) VALUES (?, ?, ?)",
-                           (product['name'], product['link'], product['store']))
+            cursor.execute("INSERT INTO products (name, link, store, category) VALUES (?, ?, ?, ?)",
+                           (product['name'], product['link'], product['store'], product.get('category', 'Uncategorized')))
             product_id = cursor.lastrowid
         
         cursor.execute("INSERT INTO prices (product_id, price, stock_status, scrape_date) VALUES (?, ?, ?, ?)",
@@ -72,32 +74,39 @@ def update_database(product_list):
     print(f"✅ Database updated with {len(product_list)} entries for {today}.")
 
 
-def categorize_products_ai(product_names, categories):
-    """
-    uses a zero-shot classification model to categorize products
-    """
-    print("Initializing AI classifier... (This may download a model on first run)")
+def classify_product_type_ai(product_names):
+    """Uses AI to classify products as 'Main Product' or 'Accessory'."""
+    if not product_names:
+        return {}
+    print("🤖 AI Step 1: Classifying product types...")
     classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
-    
-    print(f"Categorizing {len(product_names)} products...")
+    categories = ["Main Product", "Accessory"]
     results = classifier(product_names, candidate_labels=categories)
     
-    categorized_results = []
+    classified_results = {}
     for res in results:
-        categorized_results.append({
-            'name': res['sequence'],
-            'category': res['labels'][0]
-        })
+        classified_results[res['sequence']] = res['labels'][0]
+    return classified_results
+
+def categorize_products_ai(product_names, categories):
+    """Uses AI to assign specific categories like 'Laptop', 'Smartphone'."""
+    if not product_names:
+        return {}
+    print("🤖 AI Step 2: Assigning specific categories...")
+    classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+    results = classifier(product_names, candidate_labels=categories)
+    
+    categorized_results = {}
+    for res in results:
+        categorized_results[res['sequence']] = res['labels'][0]
     return categorized_results
 
 
-def scrape_altex(product_name, exclusion_keywords):
-
+def scrape_altex(product_name):
     all_products = []
     page_number = 1
     base_url = "https://altex.ro"
     formatted_product_name = quote_plus(product_name)
-    search_keywords = product_name.lower().split()
 
     print(f"🔎 Initializing stealth browser for '{product_name}' on Altex.ro...")
 
@@ -142,20 +151,15 @@ def scrape_altex(product_name, exclusion_keywords):
                     link = base_url + link_element['href']
                     stock_status = stock_element.get_text(strip=True) if stock_element else "N/A"
                     
-                    name_lower = name.lower()
-                    has_all_keywords = all(keyword in name_lower for keyword in search_keywords)
-                    has_exclusion_keyword = any(ex_keyword.lower() in name_lower for ex_keyword in exclusion_keywords)
-
-                    if has_all_keywords and not has_exclusion_keyword:
-                        try:
-                            price = float(price_text.replace('.', ''))
-                        except (ValueError, AttributeError):
-                            price = 0.0
-                        
-                        all_products.append({
-                            'name': name, 'price': price, 'stock_status': stock_status,
-                            'link': link, 'store': 'Altex'
-                        })
+                    try:
+                        price = float(price_text.replace('.', ''))
+                    except (ValueError, AttributeError):
+                        price = 0.0
+                    
+                    all_products.append({
+                        'name': name, 'price': price, 'stock_status': stock_status,
+                        'link': link, 'store': 'Altex'
+                    })
             
             page_number += 1
             time.sleep(random.uniform(2.5, 5.5))
@@ -167,16 +171,30 @@ def scrape_altex(product_name, exclusion_keywords):
 
 
 def run_scraper(product_to_search):
-    """
-    Main function that runs the scraper and updates the database.
-    """
-    product_exclusion_keywords = [
-        'folie', 'husă', 'carcasă', 'încărcător', 'cablu', 
-        'suport', 'baterie externa', 'sticla', 'protectie', 'geam', 'securizat', 'rucsac', 'geanta'
-    ]
-    
+    """runs the full scrape and two-step AI classification process."""
     setup_database()
-    altex_results = scrape_altex(product_to_search, product_exclusion_keywords)
-    update_database(altex_results)
+  
+    altex_results = scrape_altex(product_to_search)
     
-    return altex_results
+    if altex_results:
+        product_names = [p['name'] for p in altex_results]
+        
+       
+        classified_types = classify_product_type_ai(product_names)
+        main_products = [p for p in altex_results if classified_types.get(p['name']) == 'Main Product']
+        
+        
+        if main_products:
+            main_product_names = [p['name'] for p in main_products]
+            my_categories = ["Laptop", "Smartphone", "Mouse", "Keyboard", "Monitor", "Component", "Gaming Console"]
+            final_categories = categorize_products_ai(main_product_names, my_categories)
+            
+          
+            for product in main_products:
+                product['category'] = final_categories.get(product['name'], 'Uncategorized')
+        
+        print(f"Found {len(main_products)} main products. Updating database.")
+        update_database(main_products)
+        return main_products
+    
+    return []
